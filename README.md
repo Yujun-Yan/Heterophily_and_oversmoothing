@@ -1,11 +1,11 @@
-# Code for "Two Sides of the Same Coin: Heterophily and Oversmoothing in Graph Convolutional Neural Networks"
+# Codes for "Two Sides of the Same Coin: Heterophily and Oversmoothing in Graph Convolutional Neural Networks"
 ## Please cite us if you find our code useful:
-@article{yan2021two,
-  title={Two sides of the same coin: Heterophily and oversmoothing in graph convolutional neural networks},
-  author={Yan, Yujun and Hashemi, Milad and Swersky, Kevin and Yang, Yaoqing and Koutra, Danai},
-  journal={arXiv preprint arXiv:2102.06462},
-  year={2021}
-}
+@article{yan2021two, <br />
+  title={Two sides of the same coin: Heterophily and oversmoothing in graph convolutional neural networks}, <br />
+  author={Yan, Yujun and Hashemi, Milad and Swersky, Kevin and Yang, Yaoqing and Koutra, Danai}, <br />
+  journal={arXiv preprint arXiv:2102.06462}, <br />
+  year={2021} <br />
+} <br />
 ## To run the code:
 ### Software Versions:
 Python: 3.7.8
