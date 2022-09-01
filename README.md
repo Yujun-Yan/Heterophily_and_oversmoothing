@@ -1,4 +1,4 @@
-# Codes for "Two Sides of the Same Coin: Heterophily and Oversmoothing in Graph Convolutional Neural Networks"
+# Codes for the paper "Two Sides of the Same Coin: Heterophily and Oversmoothing in Graph Convolutional Neural Networks", which is accepted to The IEEE International Conference on Data Mining (ICDM 2022).
 ## Please cite us if you find our code useful:
 @article{yan2021two, <br />
   title={Two sides of the same coin: Heterophily and oversmoothing in graph convolutional neural networks}, <br />
