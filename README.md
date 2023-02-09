@@ -10,7 +10,7 @@
   year={2022},
   organization={IEEE}
 }
-<pre>
+</pre>
 
 ## To run the code:
 ### Software Versions:
