@@ -1,6 +1,7 @@
 from __future__ import division
 from __future__ import print_function
 import time
+import os
 import random
 import argparse
 import numpy as np
@@ -78,11 +79,13 @@ np.random.seed(args.seed)
 torch.manual_seed(args.seed)
 torch.cuda.manual_seed(args.seed)
 
-
+pretrained_dir = 'pretrained'
+if not os.path.exists(pretrained_dir):
+    os.makedirs(pretrained_dir)
 cudaid = "cuda:"+str(args.dev)
 device = torch.device(cudaid if torch.cuda.is_available() else "cpu")
 current_time = time.strftime("%d_%H_%M_%S", time.localtime(time.time()))
-checkpt_file = 'pretrained/'+"{}_{}_{}".format(args.model, args.data, current_time)+'.pt'
+checkpt_file = pretrained_dir+'/'+"{}_{}_{}".format(args.model, args.data, current_time)+'.pt'
 print(cudaid,checkpt_file)
 
 def get_acc_h_dist(output, out_last2, labels, deg_vec, idx_test, raw_adj, n_groups=args.n_groups):
@@ -235,7 +238,7 @@ def train(datastr,splitstr):
                                                                           factor=args.learning_rate_decay_factor,
                                                                           patience=args.learning_rate_decay_patience)
     bad_counter = 0
-    best = 999999999
+    best = np.Inf
     for epoch in range(args.epochs):
         loss_tra,acc_tra = train_step(model,optimizer,features,labels,adj,idx_train, use_geom)
         loss_val,acc_val = validate_step(model,features,labels,adj,idx_val, use_geom)
