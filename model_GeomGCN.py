@@ -1,5 +1,5 @@
 import dgl.function as fn
-import torch as th
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -50,12 +50,12 @@ class GeomGCNSingleChannel(nn.Module):
                 results_from_subgraph_list.append(self.g.ndata.pop("h_{}".format(i)))
             else:
                 results_from_subgraph_list.append(
-                    th.zeros((feature.size(0), self.out_feats), dtype=th.float32, device=feature.device))
+                    torch.zeros((feature.size(0), self.out_feats), dtype=torch.float32, device=feature.device))
 
         if self.merge == 'cat':
-            h_new = th.cat(results_from_subgraph_list, dim=-1)
+            h_new = torch.cat(results_from_subgraph_list, dim=-1)
         else:
-            h_new = th.mean(th.stack(results_from_subgraph_list, dim=-1), dim=-1)
+            h_new = torch.mean(torch.stack(results_from_subgraph_list, dim=-1), dim=-1)
         h_new = h_new * self.g.ndata['norm'].to(feature.device)
         h_new = self.activation(h_new)
         return h_new
@@ -74,9 +74,9 @@ class GeomGCN(nn.Module):
     def forward(self, feature):
         all_attention_head_outputs = [head(feature) for head in self.attention_heads]
         if self.channel_merge == 'cat':
-            return th.cat(all_attention_head_outputs, dim=1)
+            return torch.cat(all_attention_head_outputs, dim=1)
         else:
-            return th.mean(th.stack(all_attention_head_outputs), dim=0)
+            return torch.mean(torch.stack(all_attention_head_outputs), dim=0)
 
 class GeomGCNNet(nn.Module):
     def __init__(self, g, nlayers, num_input_features, num_output_classes, num_hidden, num_divisions, num_heads,
