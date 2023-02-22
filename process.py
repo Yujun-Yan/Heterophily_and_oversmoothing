@@ -246,10 +246,12 @@ def full_load_data(dataset_name, splits_file_path=None, use_raw_normalize=False,
     return g, features, labels, train_mask, val_mask, test_mask, num_features, num_labels, deg_vec, raw_adj
 
 
-def _compute_neighbourhood_feature_label_distribution(g, features, labels, train_mask):
-    '''Compute the distribution of the features and labels of the neighbours of each node in the graph.
+def _compute_neighbourhood_feature_label_distribution(g, features, labels):
+    '''
+    Compute the distribution of the features and labels of the neighbours of each node in the graph.
+    Label distribution is a K x K matrix where each row represents the probability distribution over neighbourhood labels.
+    Feature mu is a K x F matrix where each row represents the ___________________ over neighbourhood features.
     Assumes:
-
         - labels are integers from 0 to K-1, where K is the number of classes.
     '''
     num_nodes = g.shape[0]
@@ -259,10 +261,10 @@ def _compute_neighbourhood_feature_label_distribution(g, features, labels, train
 
     # K x K matrix where each row represents the probability distribution over neighbourhood labels
     label_neigh_dist = torch.zeros((num_labels, num_labels))
-    # K x F matrix where each row represents the probability distribution over neighbourhood features
-    label_feat_dist = torch.zeros((num_labels, num_features))
+    # K x F matrix where each row represents the ___________________ over neighbourhood features
+    label_feat_mu = torch.zeros((num_labels, num_features))
     
-    for node in num_nodes:
+    for node in range(num_nodes):
         neighbour_mask = g[node, :]
         neighbour_indices = torch.argwhere(neighbour_mask) # K x 1
         neighbour_indices = neighbour_indices.squeeze(dim=-1) # collapse to K
@@ -271,25 +273,40 @@ def _compute_neighbourhood_feature_label_distribution(g, features, labels, train
         label_counts = torch.bincount(neighbour_labels, minlength=num_labels)
         label_neigh_dist[labels[node]] += label_counts
 
-        neighbour_features = features[neighbour_indices] # num_neighbours x F
+        neighbour_features = features[neighbour_indices, :] # num_neighbours x F
         # Get the sum feature vector of each neighbour # NOTE This is the naive appraoch to combining neighbour info
-        label_feat_dist[labels[node]] += torch.sum(neighbour_features, dim=0) # 1 x F
+        label_feat_mu[labels[node]] += torch.sum(neighbour_features, dim=0) # add a collapesed 1 x F
 
-    # Normalize each row by the total occurances of a label – becomes probability distribution
-    label_neigh_dist = label_neigh_dist / torch.sum(label_neigh_dist, dim=1, keepdim=True)   
+    # Normalize each row (label) by the total occurances of a label – becomes probability distribution
+    # https://pytorch.org/docs/stable/generated/torch.where.html
+    totals_for_each = torch.sum(label_neigh_dist, dim=1)
+    totals_for_each = torch.unsqueeze(totals_for_each, dim=1)
+    label_neigh_dist = torch.div(label_neigh_dist, totals_for_each) # label_neigh_dist / totals_for_each
     # Compute mean feature vector for each label
-    label_feat_dist = label_feat_dist / torch.sum(label_feat_dist, dim=1, keepdim=True) 
+    label_feat_mu = torch.div(label_feat_mu, totals_for_each)
    
     # Compute standard deviation feature vector over all neighbours of nodes with a given label l
+    # NOTE: This is done separately to save memory and avoid storing all the feature vectors for ALL labels at once
     label_feat_std = torch.zeros((num_labels, num_features))
-    # for l in unique_labels:
-    #     label_mask = labels == l
-    #     label_indices = torch.argwhere(label_mask)
-    #     label_indices = label_indices.squeeze(dim=-1)
-    #     label_neighbour_indices = torch.argwhere(g[label_indices, :])
+    for l in unique_labels:
+        # labels for each node
+        label_mask = labels == l
+        # list of node ids with label
+        label_indices = torch.argwhere(label_mask)
+        label_indices = label_indices.squeeze(dim=-1)
+        # go through each of the nodes in label_indices neighbours and add their features to a tensor
+        # reduced_adj = g[label_indices, :] # len(label_indices) x F
+        neigh_features = torch.tensor([])
+        for node_id in label_indices:
+            neigh_mask = g[node_id, :]
+            neigh_indices = torch.argwhere(neigh_mask)
+            neigh_indices = neigh_indices.squeeze(dim=-1)
+            neigh_features = torch.cat((neigh_features, features[neigh_indices, :]), dim=0)
 
-    
-    return label_neigh_dist, label_feat_dist, label_feat_std
+        # take standard devation over tensor (dim=1)
+        label_feat_std[l] = torch.std(neigh_features, dim=0)
+    return label_neigh_dist, label_feat_mu, label_feat_std
+
 
 def naive_introduce_virtual_nodes(
     g,
@@ -310,5 +327,6 @@ def naive_introduce_virtual_nodes(
 
     
     '''
-    pass
-    
+    label_neigh_dist, label_feat_mu, label_feat_std = _compute_neighbourhood_feature_label_distribution(g, features, labels)
+    print("Shapes", label_neigh_dist.shape, label_feat_mu.shape, label_feat_std.shape)
+
