@@ -245,6 +245,7 @@ def full_load_data(dataset_name, splits_file_path=None, use_raw_normalize=False,
 
     return g, features, labels, train_mask, val_mask, test_mask, num_features, num_labels, deg_vec, raw_adj
 
+####### Virtual node addition #################
 
 def _compute_neighbourhood_feature_label_distribution(g, features, labels):
     '''
@@ -329,4 +330,11 @@ def naive_introduce_virtual_nodes(
     '''
     label_neigh_dist, label_feat_mu, label_feat_std = _compute_neighbourhood_feature_label_distribution(g, features, labels)
     print("Shapes", label_neigh_dist.shape, label_feat_mu.shape, label_feat_std.shape)
+    # Introduce the virtual nodes that connect all nodes with similar distributions of neighbour labels
+    # Construct distribution of labels from each of label_neigh_dist
+
+    # for label_dist in label_neigh_dist[, :]:
+    #     stuff = torch.distributions.categorical.Categorical()
+
+    # Construction distribution of features from each pair from label_feat_mu and label_feat_std
 
