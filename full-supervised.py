@@ -37,6 +37,7 @@ parser.add_argument('--dprate_GPRGNN', type=float,
 parser.add_argument('--patience', type=int, default=100, help='Patience')
 parser.add_argument('--data', default='cora', help='dateset')
 parser.add_argument('--dev', type=int, default=0, help='device id')
+parser.add_argument('--cpu_only', action='store_true', help='Only use CPU')
 parser.add_argument('--alpha', type=float, default=0.5, help='alpha_l')
 
 parser.add_argument('--alpha_GPRGNN', type=float,
@@ -110,11 +111,14 @@ pretrained_dir = 'pretrained'
 if not os.path.exists(pretrained_dir):
     os.makedirs(pretrained_dir)
 cudaid = "cuda:"+str(args.dev)
-device = torch.device(cudaid if torch.cuda.is_available() else "cpu")
+if args.cpu_only:
+    device = torch.device("cpu")
+else:
+    device = torch.device(cudaid if torch.cuda.is_available() else "cpu")
 current_time = time.strftime("%d_%H_%M_%S", time.localtime(time.time()))
 checkpt_file = pretrained_dir+'/' + \
     "{}_{}_{}".format(args.model, args.data, current_time)+'.pt'
-print(cudaid, checkpt_file)
+print("Device and checkpoint info:", device, cudaid, checkpt_file)
 
 
 def get_acc_h_dist(output, out_last2, labels, deg_vec, idx_test, raw_adj, n_groups=args.n_groups):

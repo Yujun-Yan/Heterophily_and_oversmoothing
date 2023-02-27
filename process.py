@@ -140,8 +140,8 @@ def full_load_data(dataset_name, splits_file_path=None, use_raw_normalize=False,
     else:
         graph_adjacency_list_file_path = os.path.join(
             'new_data', dataset_name, 'out1_graph_edges.txt')
-        graph_node_features_and_labels_file_path = os.path.join('new_data', dataset_name,
-                                                                'out1_node_feature_label.txt')
+        graph_node_features_and_labels_file_path = os.path.join(
+            'new_data', dataset_name, 'out1_node_feature_label.txt')
 
         G = nx.DiGraph()
         graph_node_features_dict = {}
@@ -204,7 +204,8 @@ def full_load_data(dataset_name, splits_file_path=None, use_raw_normalize=False,
     else:
         g = adj
         if use_raw_normalize:
-            g = row_normalized_adjacency(g) # never actually used, alway use D^(-1/2) A D^(-1/2)
+            # never actually used, alway use D^(-1/2) A D^(-1/2)
+            g = row_normalized_adjacency(g)
         else:
             g = sys_normalized_adjacency(g)
         g = sparse_mx_to_torch_sparse_tensor(g, model_type)
@@ -243,6 +244,10 @@ def full_load_data(dataset_name, splits_file_path=None, use_raw_normalize=False,
     val_mask = torch.BoolTensor(val_mask)
     test_mask = torch.BoolTensor(test_mask)
 
+    # TODO call correctly
+    # naive_introduce_virtual_nodes(g, features, labels, train_mask,
+    #                               val_mask, test_mask, num_features, num_labels, deg_vec, raw_adj)
+
     return g, features, labels, train_mask, val_mask, test_mask, num_features, num_labels, deg_vec, raw_adj
 
 ####### Virtual node addition #################
@@ -256,40 +261,46 @@ def _compute_neighbourhood_feature_label_distribution(g, features, labels):
         - labels are integers from 0 to K-1, where K is the number of classes.
     '''
     num_nodes = g.shape[0]
-    num_labels = len(np.unique(labels))
+    num_labels = len(torch.unique(labels))
     num_features = features.shape[1]
-    unique_labels = set(labels)
+    unique_labels = torch.unique(labels)
 
     # K x K matrix where each row represents the probability distribution over neighbourhood labels
     label_neigh_dist = torch.zeros((num_labels, num_labels))
     # K x F matrix where each row represents the ___________________ over neighbourhood features
     label_feat_mu = torch.zeros((num_labels, num_features))
-    
+
+    print(f'Computing label dist and feature mu for {num_nodes} nodes')
     for node in range(num_nodes):
         neighbour_mask = g[node, :]
-        neighbour_indices = torch.argwhere(neighbour_mask) # K x 1
-        neighbour_indices = neighbour_indices.squeeze(dim=-1) # collapse to K
+        neighbour_indices = torch.argwhere(neighbour_mask)  # K x 1
+        neighbour_indices = neighbour_indices.squeeze(dim=-1)  # collapse to K
 
-        neighbour_labels = labels[neighbour_indices] # K?
+        neighbour_labels = labels[neighbour_indices]  # K?
         label_counts = torch.bincount(neighbour_labels, minlength=num_labels)
         label_neigh_dist[labels[node]] += label_counts
 
-        neighbour_features = features[neighbour_indices, :] # num_neighbours x F
+        # num_neighbours x F
+        neighbour_features = features[neighbour_indices, :]
         # Get the sum feature vector of each neighbour # NOTE This is the naive appraoch to combining neighbour info
-        label_feat_mu[labels[node]] += torch.sum(neighbour_features, dim=0) # add a collapesed 1 x F
+        # add a collapesed 1 x F
+        label_feat_mu[labels[node]] += torch.sum(neighbour_features, dim=0)
 
     # Normalize each row (label) by the total occurances of a label – becomes probability distribution
     # https://pytorch.org/docs/stable/generated/torch.where.html
     totals_for_each = torch.sum(label_neigh_dist, dim=1)
     totals_for_each = torch.unsqueeze(totals_for_each, dim=1)
-    label_neigh_dist = torch.div(label_neigh_dist, totals_for_each) # label_neigh_dist / totals_for_each
+    # label_neigh_dist / totals_for_each
+    label_neigh_dist = torch.div(label_neigh_dist, totals_for_each)
     # Compute mean feature vector for each label
     label_feat_mu = torch.div(label_feat_mu, totals_for_each)
-   
+
     # Compute standard deviation feature vector over all neighbours of nodes with a given label l
     # NOTE: This is done separately to save memory and avoid storing all the feature vectors for ALL labels at once
     label_feat_std = torch.zeros((num_labels, num_features))
+    print(f'Processing unique labels:', unique_labels)
     for l in unique_labels:
+        print(f'Computing std for label {l}')
         # labels for each node
         label_mask = labels == l
         # list of node ids with label
@@ -302,11 +313,30 @@ def _compute_neighbourhood_feature_label_distribution(g, features, labels):
             neigh_mask = g[node_id, :]
             neigh_indices = torch.argwhere(neigh_mask)
             neigh_indices = neigh_indices.squeeze(dim=-1)
-            neigh_features = torch.cat((neigh_features, features[neigh_indices, :]), dim=0)
+            neigh_features = torch.cat(
+                (neigh_features, features[neigh_indices, :]), dim=0)
 
         # take standard devation over tensor (dim=1)
         label_feat_std[l] = torch.std(neigh_features, dim=0)
     return label_neigh_dist, label_feat_mu, label_feat_std
+
+
+def _binarize_tensor(g):
+    g_dense = g.to_dense()
+    return torch.where(g_dense > 0, torch.ones_like(g_dense), torch.zeros_like(g_dense))
+
+def _binarize_sparse_tensor(sparse_tensor):
+    # Get the shape of the input sparse tensor
+    shape = sparse_tensor.shape
+
+    # Get the indices and values of the nonzero elements in the input sparse tensor
+    indices = sparse_tensor.coalesce().indices()
+    values = torch.ones(indices.shape[1])
+
+    # Create a new sparse tensor with the same shape as the input sparse tensor, but with ones in the indices
+    binary_tensor = torch.sparse.FloatTensor(indices, values, shape)
+
+    return binary_tensor
 
 
 def naive_introduce_virtual_nodes(
@@ -322,19 +352,23 @@ def naive_introduce_virtual_nodes(
     raw_adj,
 ):
     '''
-    Given a graph G (as an adjacency matrix) and a node classificationt task, for each class k of node in the graph
+    Given a graph G (as a weighted adjacency matrix) and a node classification task, for each class k of node in the graph
     generate a distribution over the neighbourhood labels of neighbouring nodes and a distribution over the features
     of each of the classes.
 
-    
     '''
-    label_neigh_dist, label_feat_mu, label_feat_std = _compute_neighbourhood_feature_label_distribution(g, features, labels)
-    print("Shapes", label_neigh_dist.shape, label_feat_mu.shape, label_feat_std.shape)
+    # Transform weighted adj to unweighted
+    g = _binarize_tensor(g)
+    # Compute the distribution of the features and labels of the neighbours of each node in the graph.
+    label_neigh_dist, label_feat_mu, label_feat_std = _compute_neighbourhood_feature_label_distribution(
+        g, features, labels)
+    print("Shapes", label_neigh_dist.shape,
+          label_feat_mu.shape, label_feat_std.shape)
+
     # Introduce the virtual nodes that connect all nodes with similar distributions of neighbour labels
     # Construct distribution of labels from each of label_neigh_dist
 
     # for label_dist in label_neigh_dist[, :]:
     #     stuff = torch.distributions.categorical.Categorical()
 
-    # Construction distribution of features from each pair from label_feat_mu and label_feat_std
-
+    # Construct distribution of features from each pair from label_feat_mu and label_feat_std
