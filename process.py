@@ -12,6 +12,7 @@ import networkx as nx
 import numpy as np
 import scipy.sparse as sp
 from dgl import DGLGraph
+import torch_geometric
 
 # adapted from geom-gcn
 
@@ -252,6 +253,7 @@ def full_load_data(dataset_name, splits_file_path=None, use_raw_normalize=False,
 
 ####### Virtual node addition #################
 
+
 def _compute_neighbourhood_feature_label_distribution(g, features, labels):
     '''
     Compute the distribution of the features and labels of the neighbours of each node in the graph.
@@ -325,6 +327,7 @@ def _binarize_tensor(g):
     g_dense = g.to_dense()
     return torch.where(g_dense > 0, torch.ones_like(g_dense), torch.zeros_like(g_dense))
 
+
 def _binarize_sparse_tensor(sparse_tensor):
     # Get the shape of the input sparse tensor
     shape = sparse_tensor.shape
@@ -339,36 +342,137 @@ def _binarize_sparse_tensor(sparse_tensor):
     return binary_tensor
 
 
-def naive_introduce_virtual_nodes(
+def add_vnodes(
     g,
     features,
     labels,
-    train_mask,
-    val_mask,
-    test_mask,
+    degree_vec,
+    new_adjacency,
+    new_features,
+    new_labels
+):
+    '''
+    Creates a new graph (represented with an adjacency matrix, feature matrix and label vector) that includes
+    the new virtual nodes whose features are given as an (N', F) torch.tensor where N; denotes the number of 
+    virtual nodes to introduce, whose featur
+
+    Returns: 
+    
+    1. A new adjacency matrix as a torch.tensor (N + N', N + N') containing the additional virtual nodes
+       where N' denotes the number of virtual nodes to introduce.
+    2. A new feature matrix as a torch.tensor (N + N', F) where F denotes the feature dimension.
+    3. A new label vector as a torch.tensor (N + N') 
+
+    Assumes raw adjacency matrix `g` (N x N) as a torch.tensor. `features` is a (N x F) torch.tensor where each row
+    represents the features of a node. `labels` is an (N x 1) torch.tensor where each element `labels[i]` contains 
+    the node label for node i. New adjacency is a (new_N x new_N) torch.tensor of the new nodes to add.
+    '''
+    pass
+
+def compute_differences(
+    g,
+    features,
+    labels,
     num_features,
     num_labels,
     degree_vec,
-    raw_adj,
 ):
     '''
-    Given a graph G (as a weighted adjacency matrix) and a node classification task, for each class k of node in the graph
+    Compute the difference between a nodes neighbourhood and the neighbourhood of nodes with the same label.
+    '''
+    # TODO
+
+    return label_divergence, feature_divergence
+
+def convert_to_torch_distributions(label_neigh_dist, label_feat_mu, label_feat_std):
+    # Construct label distribution objects from each of label_neigh_dist
+    label_neigh_dist_objs = []
+    for l in label_neigh_dist:
+        label_neigh_dist_objs.append(torch.distributions.categorical.Categorical(l))
+
+    # Construct feature distribution objects from each pair from label_feat_mu and label_feat_std
+    feat_neigh_dist_objs = []  # list of torch distribution objects
+    for mu, std in zip(label_feat_mu, label_feat_std):
+        feat_neigh_dist_objs.append(torch.distributions.multivariate_normal.MultivariateNormal(mu, std))
+    return label_neigh_dist_objs, feat_neigh_dist_objs
+
+def compute_divergences(
+    g,
+    features,
+    labels,
+    num_features,
+    num_labels,
+    degree_vec,
+    label_neigh_dist_objs,
+    feat_neigh_dist_objs,
+):
+    '''
+    Given a graph G (as a unweighted adjacency matrix) and a node classification task, for each class k of node in the graph
     generate a distribution over the neighbourhood labels of neighbouring nodes and a distribution over the features
     of each of the classes.
-
+    Then for each node, compute its divergence with the distributions over the neighbourhood labels and features.
     '''
-    # Transform weighted adj to unweighted
-    g = _binarize_tensor(g)
+    num_nodes = g.shape[0]
+
+    # Introduce the virtual nodes that connect all nodes with similar distributions of neighbour labels
+
+    # NAIVE 1: Create a list of divergences, between each node's neighbour dists and the average label neighbour dist calculated
+    degree_vec = torch.tensor(degree_vec)
+    neigh_label_divergences = torch.zeros(num_nodes)
+    neigh_feat_divergences = torch.zeros(num_nodes)
+    for i, l in enumerate(labels):
+        neighbour_mask = g[i, :]
+        neighbour_indices = torch.argwhere(neighbour_mask)  # K x 1
+        neighbour_indices = neighbour_indices.squeeze(dim=-1)  # collapse to K
+        neighbour_labels = labels[neighbour_indices]  # K
+        label_counts = torch.bincount(neighbour_labels, minlength=num_labels)
+
+        # Label divergence
+        neigh_label_divergences[i] = torch.distributions.kl.kl_divergence(
+                label_neigh_dist_objs[l],
+                torch.distributions.categorical.Categorical(label_counts / degree_vec[i]))
+
+        # Feature divergence
+        neighbour_features = features[neighbour_indices, :]
+        neigh_feat_divergences[i] = torch.distributions.kl.kl_divergence(
+                feat_neigh_dist_objs[l],
+                torch.distributions.multivariate_normal.MultivariateNormal(
+                    torch.mean(neighbour_features, dim=0),
+                    torch.std(neighbour_features, dim=0)))
+
+    # NAIVE 1: sub-approach 1: Add virtual nodes to nodes with divergence > epsilon
+    # eps = ...
+
+    # NAIVE 1: sub-approach 2: Add virtual nodes to p proportion of nodes with highest divergence
+    p = 0.1
+    num_vnodes = int(p * num_nodes)
+
+    kl_sorted_label_indices = torch.argsort(neigh_label_divergences)[:num_vnodes]
+    kl_sorted_feat_indices = torch.argsort(neigh_feat_divergences)[:num_vnodes]
+
+    return kl_sorted_label_indices, kl_sorted_feat_indices
+
+def naive_strategy_1(
+    g,
+    features,
+    labels,
+    num_features,
+    num_labels,
+    degree_vec,
+):
+    '''
+    Given a weighted sparse adj graph G, a feature matrix and a label vector, add virtual nodes to the graph
+    that connect nodes with high divergence in their distributions of neighbour labels and features, to virtual nodes.
+    
+    '''
+    g = _binarize_tensor(g) # Transform (sparse) weighted adj to (dense) unweighted adj
+    
     # Compute the distribution of the features and labels of the neighbours of each node in the graph.
     label_neigh_dist, label_feat_mu, label_feat_std = _compute_neighbourhood_feature_label_distribution(
         g, features, labels)
-    print("Shapes", label_neigh_dist.shape,
-          label_feat_mu.shape, label_feat_std.shape)
+    label_neigh_dist_objs, feat_neigh_dist_objs = convert_to_torch_distributions(label_neigh_dist, label_feat_mu, label_feat_std)
 
-    # Introduce the virtual nodes that connect all nodes with similar distributions of neighbour labels
-    # Construct distribution of labels from each of label_neigh_dist
+    # TODO: compute_divergences() or compute_differences() ...?
 
-    # for label_dist in label_neigh_dist[, :]:
-    #     stuff = torch.distributions.categorical.Categorical()
-
-    # Construct distribution of features from each pair from label_feat_mu and label_feat_std
+    # TODO: Add virtual nodes with add_vnodes
+    return g, features, labels, num_features, num_labels, degree_vec, raw_adj
