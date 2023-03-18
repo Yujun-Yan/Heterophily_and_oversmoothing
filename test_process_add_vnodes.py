@@ -66,28 +66,3 @@ def test_diff_from_average_label():
 
 if __name__ == '__main__':
     test_compute_neighbourhood_feature_label_distribution()
-
-# label_neigh_dist tensor([[0.2857, 0.7143],
-#         [1.0000, 0.0000]])
-# label_feat_mu tensor([[0.7143, 0.7143],
-#         [0.0000, 0.0000]])
-# label_feat_std tensor([[0.4880, 0.4880],
-#         [0.0000, 0.0000]])
-
-# Node 0:
-# 0 neighbours of label 0, 2 neighbours of label 1 which gives a distribution of [0, 1] 
-
-# Node 3:
-# 1 neighbour of label 0, 1 neighbour of label 1 which gives a label distribution of [0.5, 0.5]
-# [1,1], [0,0] -> [0.5, 0.5]
-
-# node_neigh_delta tensor([[ 0.2857, -0.2857],
-#         [ 0.0000,  0.0000],
-#         [ 0.0000,  0.0000],
-#         [-0.2143,  0.2143],
-#         [-0.0476,  0.0476]])
-# node_feat_delta tensor([[-0.2857, -0.2857],
-#         [ 0.0000,  0.0000],
-#         [ 0.0000,  0.0000],
-#         [ 0.2143,  0.2143],
-#         [ 0.0476,  0.0476]])
